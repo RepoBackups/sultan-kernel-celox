@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wl_cfg80211.c 372898 2012-12-05 08:09:45Z $
+ * $Id: wl_cfg80211.c 375020 2012-12-17 06:10:40Z $
  */
 
 #include <typedefs.h>
@@ -3773,7 +3773,7 @@ wl_cfg80211_set_power_mgmt(struct wiphy *wiphy, struct net_device *dev,
 #endif /* SUPPORT_PM2_ONLY */
 	CHECK_SYS_UP(wl);
 
-	if (wl->p2p_net == dev || _net_info == NULL) {
+	if (wl->p2p_net == dev || _net_info == NULL || wl->vsdb_mode) {
 		return err;
 	}
 	WL_DBG(("%s: Enter power save enabled %d\n", dev->name, enabled));
@@ -3785,7 +3785,7 @@ wl_cfg80211_set_power_mgmt(struct wiphy *wiphy, struct net_device *dev,
 	pm = enabled ? PM_FAST : PM_OFF;
 #endif /* SUPPORT_PM2_ONLY */
 
-	if (_net_info->pm_block || wl->vsdb_mode) {
+	if (_net_info->pm_block) {
 		/* Do not enable the power save if it is p2p interface or vsdb mode is set */
 		WL_DBG(("%s:Do not enable the power save for pm_block %d or vsdb_mode %d\n",
 			dev->name, _net_info->pm_block, wl->vsdb_mode));
@@ -8673,43 +8673,35 @@ static s32 wl_notifier_change_state(struct wl_priv *wl, struct net_info *_net_in
 		wl_cfg80211_concurrent_roam(wl, 1);
 
 		if (wl_get_mode_by_netdev(wl, _net_info->ndev) == WL_MODE_AP) {
-			pm = PM_OFF;
-			WL_DBG(("%s:AP power save %s\n", _net_info->ndev->name,
-				pm ? "enabled" : "disabled"));
-			if ((err = wldev_ioctl(_net_info->ndev, WLC_SET_PM,
-				&pm, sizeof(pm), true)) != 0) {
-				if (err == -ENODEV)
-					WL_DBG(("%s:net_device is not ready\n",
-						_net_info->ndev->name));
-				else
-					WL_ERR(("%s:error (%d)\n", _net_info->ndev->name, err));
-			}
+
 			if (wl_add_remove_eventmsg(primary_dev, WLC_E_P2P_PROBREQ_MSG, false))
 				WL_ERR((" failed to unset WLC_E_P2P_PROPREQ_MSG\n"));
-			return 0;
 		}
 		wl_cfg80211_determine_vsdb_mode(wl);
-		pm = PM_OFF;
-		for_each_ndev(wl, iter, next) {
-			if ((!wl->vsdb_mode) && (iter->ndev != _net_info->ndev)) {
-				/* Do not touch the other interfaces power save
-				 * if we are not in vsdb mode
-				 */
-				continue;
+		if (wl->vsdb_mode || _net_info->pm_block) {
+			pm = PM_OFF;
+			for_each_ndev(wl, iter, next) {
+				if (iter->pm_restore)
+					continue;
+				/* Save the current power mode */
+				err = wldev_ioctl(iter->ndev, WLC_GET_PM, &iter->pm,
+						sizeof(iter->pm), false);
+				WL_DBG(("%s:power save %s\n", iter->ndev->name,
+							iter->pm ? "enabled" : "disabled"));
+				if (!err && iter->pm) {
+					iter->pm_restore = true;
+				}
+
 			}
-			/* Save the current power mode */
-			iter->pm_restore = true;
-			err = wldev_ioctl(iter->ndev, WLC_GET_PM, &iter->pm,
-				sizeof(iter->pm), true);
-			WL_DBG(("%s:power save %s\n", iter->ndev->name,
-				iter->pm ? "enabled" : "disabled"));
-			if ((err = wldev_ioctl(iter->ndev, WLC_SET_PM, &pm,
-				sizeof(pm), true)) != 0) {
-				if (err == -ENODEV)
-					WL_DBG(("%s:netdev not ready\n", iter->ndev->name));
-				else
-					WL_ERR(("%s:error (%d)\n", iter->ndev->name, err));
-				iter->ndev->ieee80211_ptr->ps = pm ? true: false;
+			for_each_ndev(wl, iter, next) {
+				if ((err = wldev_ioctl(iter->ndev, WLC_SET_PM, &pm,
+							sizeof(pm), true)) != 0) {
+					if (err == -ENODEV)
+						WL_DBG(("%s:netdev not ready\n", iter->ndev->name));
+					else
+						WL_ERR(("%s:error (%d)\n", iter->ndev->name, err));
+					iter->ndev->ieee80211_ptr->ps = false;
+				}
 			}
 		}
 	}
@@ -8719,7 +8711,7 @@ static s32 wl_notifier_change_state(struct wl_priv *wl, struct net_info *_net_in
 		wl_update_prof(wl, _net_info->ndev, NULL, &chan, WL_PROF_CHAN);
 		wl_cfg80211_determine_vsdb_mode(wl);
 		for_each_ndev(wl, iter, next) {
-			if (iter->pm_restore) {
+			if (iter->pm_restore && iter->pm) {
 				WL_DBG(("%s:restoring power save %s\n",
 					iter->ndev->name, (iter->pm ? "enabled" : "disabled")));
 				err = wldev_ioctl(iter->ndev,
@@ -8732,6 +8724,7 @@ static s32 wl_notifier_change_state(struct wl_priv *wl, struct net_info *_net_in
 					break;
 				}
 				iter->pm_restore = 0;
+				iter->ndev->ieee80211_ptr->ps = true;
 			}
 		}
 		wl_cfg80211_concurrent_roam(wl, 0);
@@ -9755,6 +9748,7 @@ wl_update_prof(struct wl_priv *wl, struct net_device *ndev,
 		break;
 	case WL_PROF_CHAN:
 		profile->channel = *(u32*)data;
+		break;
 	default:
 		err = -EOPNOTSUPP;
 		break;

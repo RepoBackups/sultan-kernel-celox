@@ -631,7 +631,11 @@ void mdp4_overlay1_done_dtv(void);
 void mdp4_overlay1_done_atv(void);
 void mdp4_primary_vsync_lcdc(void);
 void mdp4_external_vsync_dtv(void);
-void mdp4_lcdc_wait4vsync(int cndx, long long *vtime);
+#if defined (CONFIG_EUR_MODEL_GT_I9210)
+    void mdp4_lcdc_wait4vsync(int cndx);
+#else
+    void mdp4_lcdc_wait4vsync(int cndx, long long *vtime);
+#endif
 void mdp4_overlay_lcdc_vsync_push(struct msm_fb_data_type *mfd,
 				struct mdp4_overlay_pipe *pipe);
 void mdp4_mddi_overlay_dmas_restore(void);

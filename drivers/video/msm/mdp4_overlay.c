@@ -3357,7 +3357,11 @@ int mdp4_overlay_wait4vsync(struct fb_info *info, long long *vtime)
 		else if (ctrl->panel_mode & MDP4_PANEL_DSI_CMD)
 			mdp4_dsi_cmd_wait4vsync(0, vtime);
 		else if (ctrl->panel_mode & MDP4_PANEL_LCDC)
+#if defined (CONFIG_EUR_MODEL_GT_I9210)
+                        mdp4_lcdc_wait4vsync(0);
+#else
 			mdp4_lcdc_wait4vsync(0, vtime);
+#endif
 		else if (ctrl->panel_mode & MDP4_PANEL_MDDI)
 			mdp4_mddi_wait4vsync(0, vtime);
 	} else if (hdmi_prim_display || info->node == 1) {

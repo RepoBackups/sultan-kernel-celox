@@ -15109,7 +15109,11 @@ static int sensor_power_3p_prox_cnt = 0;
 #if defined (CONFIG_OPTICAL_GP2AP020A00F)
 static struct regulator *vsensor_2p4 = NULL;
 #endif
+#ifndef CONFIG_USA_MODEL_SGH_I717
 static struct regulator *vsensor_1p8 = NULL;
+#else
+static struct regulator *vsensor_2p85_magnetic = NULL;
+#endif
 
 static int sensor_power_2p85_cnt = 0;
 static int sensor_power_2p4_cnt = 0;
@@ -15175,6 +15179,7 @@ static void sensor_power_on_vdd(int vdd_2p85_on, int vdd_1p8_on, int vdd_2p4_on,
 		}
 	}
 
+#ifndef CONFIG_USA_MODEL_SGH_I717
 	if(vsensor_1p8 == NULL) {
 	vsensor_1p8 = regulator_get(NULL, "8058_l20");
 	if (IS_ERR(vsensor_1p8))
@@ -15191,6 +15196,7 @@ static void sensor_power_on_vdd(int vdd_2p85_on, int vdd_1p8_on, int vdd_2p4_on,
 		if (ret)
 				printk("%s: error enabling regulator\n", __func__);
 			}
+#endif
 
 #if defined (CONFIG_OPTICAL_GP2AP020A00F)
 	if(vsensor_2p4 == NULL) {
@@ -15250,6 +15256,26 @@ static void sensor_power_on_vdd(int vdd_2p85_on, int vdd_1p8_on, int vdd_2p4_on,
     		}
     	}
 	}
+#elif defined(CONFIG_USA_MODEL_SGH_I717)
+	if (get_hw_rev() >= 0x5) {
+		if(vsensor_2p85_magnetic == NULL) {
+			vsensor_2p85_magnetic = regulator_get(NULL, "8058_l20");
+			if (IS_ERR(vsensor_2p85_magnetic))
+			return ;
+
+			ret = regulator_set_voltage(vsensor_2p85_magnetic, 2850000, 2850000);
+			if (ret)
+				printk("%s: error vsensor_2p85_magnetic setting voltage ret=%d\n", __func__, ret);
+			}
+
+		if(vdd_2p85_mag_on) {
+			sensor_power_2p85_mag_cnt++;
+			ret = regulator_enable(vsensor_2p85_magnetic);
+			if (ret) {
+				printk("%s: error enabling regulator\n", __func__);
+			}
+		}
+	}
 #endif
 
 	printk("%s: vdd_2p85=%d, vdd_1p8=%d, vdd_2p_4=%d, vdd_2p85_mag=%d\n", __func__,	sensor_power_2p85_cnt, sensor_power_1p8_cnt, sensor_power_2p4_cnt, sensor_power_2p85_mag_cnt);
@@ -15269,6 +15295,7 @@ static void sensor_power_off_vdd(int vdd_2p85_off, int vdd_1p8_off, int vdd_2p4_
 		}
 	}
 	
+#ifndef CONFIG_USA_MODEL_SGH_I717
 	if(vdd_1p8_off) {
 		sensor_power_1p8_cnt--;
 		if(regulator_is_enabled(vsensor_1p8)) {
@@ -15278,6 +15305,7 @@ static void sensor_power_off_vdd(int vdd_2p85_off, int vdd_1p8_off, int vdd_2p4_
 			}
 		}
 	}
+#endif
 
 #if defined (CONFIG_OPTICAL_GP2AP020A00F)
 	if(vdd_2p4_off) {
@@ -15313,6 +15341,18 @@ static void sensor_power_off_vdd(int vdd_2p85_off, int vdd_1p8_off, int vdd_2p4_
                 }
             }
         }
+#elif defined(CONFIG_USA_MODEL_SGH_I717)
+	if (get_hw_rev() >= 0x5) {
+		if(vdd_2p85_mag_off) {
+        	sensor_power_2p85_mag_cnt--;
+       		if(regulator_is_enabled(vsensor_2p85_magnetic)) {
+            	ret = regulator_disable(vsensor_2p85_magnetic);
+            	if (ret) {
+        			printk("[MAG] %s: error vsensor_2p85_magnetic enabling regulator\n", __func__);
+            	}
+        	}
+        }
+	}
 #endif
 
 	printk("%s: vdd_2p85=%d, vdd_1p8=%d, vdd_2p_4=%d, vdd_2p85_mag=%d\n", __func__,	sensor_power_2p85_cnt, sensor_power_1p8_cnt, sensor_power_2p4_cnt, sensor_power_2p85_mag_cnt);
@@ -15405,6 +15445,11 @@ static void sensor_power_on(void)
 		sensor_power_on_vdd(1, 1, 1, 0);
 #elif defined(CONFIG_USA_MODEL_SGH_I757) || defined (CONFIG_CAN_MODEL_SGH_I757M)
 	sensor_power_on_vdd(1, 0, 0, 0);
+#elif defined (CONFIG_USA_MODEL_SGH_I717)
+	if (get_hw_rev() >= 0x5)
+	    sensor_power_on_vdd(1, 0, 0, 1);
+	else
+		sensor_power_on_vdd(1, 0, 0, 0);
 #else
 	sensor_power_on_vdd(1, 1, 0, 0);
 #endif
@@ -15427,7 +15472,12 @@ static void sensor_power_off(void)
 	else
 		sensor_power_off_vdd(1, 1, 1, 0);
 #elif defined(CONFIG_USA_MODEL_SGH_I757) || defined (CONFIG_CAN_MODEL_SGH_I757M)
-	sensor_power_off_vdd(1, 0, 0, 0);
+		sensor_power_off_vdd(1, 0, 0, 0);
+#elif defined (CONFIG_USA_MODEL_SGH_I717)
+	if (get_hw_rev() >= 0x5)
+	    sensor_power_off_vdd(1, 0, 0, 1);
+	else
+		sensor_power_off_vdd(1, 0, 0, 0);
 #else
 	sensor_power_off_vdd(1, 1, 0, 0);
 #endif
